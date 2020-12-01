@@ -20,8 +20,8 @@ typedef float FieldComponent;
 #define C 2.99792458e10f
 #define Qe 4.80325021e-10f
 #define Ee (-1)
-#define Me 9.108e-28f
-#define W2MeV 1.601e-6f
+#define Me 9.10953447e-28f
+#define W2MeV 1.6021766e-7f
 
 //Энергия покоя электрона в МэВ
 #define E0e (Me*C*C/W2MeV)
