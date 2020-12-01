@@ -45,9 +45,7 @@ typedef struct {
     float weight[PARTICLE_BLOCK_SIZE];
     float currentTime[PARTICLE_BLOCK_SIZE];
     unsigned int cellIdFlag[PARTICLE_BLOCK_SIZE];
-#ifdef DEBUG
     long id[PARTICLE_BLOCK_SIZE];
-#endif
 } ParticlesBlock;
 
 typedef struct {
@@ -60,9 +58,7 @@ typedef struct {
     float weight;
     float currentTime;
     int cellIdFlag;
-#ifdef DEBUG
     long id;
-#endif
 } ParticleInfo;
 
 #endif //__COMMON_H__PIC__

@@ -212,6 +212,7 @@ __global__ __launch_bounds__(1024, 1) void exchangeParticles(ParticlesBlock* mod
                 modellingBlocks[bi].currentTime[pi] = exchangeBlocks[bi2].currentTime[pi2];
 
                 modellingBlocks[bi].cellIdFlag[pi] = exchangeBlocks[bi2].cellIdFlag[pi2];
+                modellingBlocks[bi].id[pi] = exchangeBlocks[bi2].id[pi2];
             }
         }
 
@@ -246,6 +247,7 @@ __global__ __launch_bounds__(1024, 1) void exchangeParticles(ParticlesBlock* mod
                 exchangeBlocks[bi2].currentTime[pi2] = modellingBlocks[bi].currentTime[pi];
                 exchangeBlocks[bi2].weight[pi2] = modellingBlocks[bi].weight[pi];
                 exchangeBlocks[bi2].cellIdFlag[pi2] = modellingBlocks[bi].cellIdFlag[pi];
+                exchangeBlocks[bi2].id[pi2] = modellingBlocks[bi].id[pi];
 
                 modellingBlocks[bi].cellIdFlag[pi] = FLAG_DIED;
             }
@@ -283,6 +285,7 @@ bool gpuExchangeParticles(GpuState *state, ParticleInfo *particles, int& countIn
         pb->px[pi] = particles[i].px;
         pb->py[pi] = particles[i].py;
         pb->pz[pi] = particles[i].pz;
+        pb->id[pi] = particles[i].id;
         pb->currentTime[pi] = particles[i].currentTime;
 
         pb->weight[pi] = particles[i].weight;
@@ -361,6 +364,7 @@ bool gpuExchangeParticles(GpuState *state, ParticleInfo *particles, int& countIn
         particles[i].weight = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].weight[i%PARTICLE_BLOCK_SIZE];
         particles[i].currentTime = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].currentTime[i%PARTICLE_BLOCK_SIZE];
         particles[i].cellIdFlag = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].cellIdFlag[i%PARTICLE_BLOCK_SIZE];
+        particles[i].id = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].id[i%PARTICLE_BLOCK_SIZE];
 
     }
 
