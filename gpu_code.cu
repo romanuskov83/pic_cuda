@@ -451,13 +451,11 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     py = particlesBlocks[bi].py[pi];
     pz = particlesBlocks[bi].pz[pi];
 
-    Coordinate  u02= px*px + py*py + pz*pz;
-    Coordinate  q_v = C/sqrtf(1.0f+u02);
+    Coordinate  q_v = C/sqrtf(1.0f+px*px + py*py + pz*pz);
     Coordinate vx = px*q_v;
     Coordinate vy = py*q_v;
     Coordinate vz = pz*q_v;
-//    Coordinate v = norm3df(vx,vy,vz);
-    
+
 
 
     Coordinate toBorderTimeX;
@@ -466,7 +464,7 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     } else if(vx < 0) {
         toBorderTimeX = (fromX-rx)/vx;
     } else {
-        toBorderTimeX = 1e9;
+        toBorderTimeX = 1e9f;
     }
 
 
@@ -476,7 +474,7 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     } else if(vy < 0) {
         toBorderTimeY = (fromY-ry)/vy;
     } else {
-        toBorderTimeY = 1e9;
+        toBorderTimeY = 1e9f;
     }
 
     Coordinate toBorderTimeZ;
@@ -485,7 +483,7 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     } else if(vz < 0) {
         toBorderTimeZ = (fromZ-rz)/vz;
     } else {
-        toBorderTimeZ = 1e9;
+        toBorderTimeZ = 1e9f;
     }
 
     Coordinate toBorderTime = min(toBorderTimeX,min(toBorderTimeY,toBorderTimeZ));
@@ -698,7 +696,8 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     py-=yey;
     pz-=yez;
 
-    const double d2gm=0.5/sqrtf(1.0f + 0.25f*sqr(2*px+yex) + 0.25f*sqr(2*py+yey) + 0.25f*sqr(2*pz+yez));
+    const double d2gm=0.5/sqrt(1.0 + 0.25*sqr(2*px+yex) + 0.25*sqr(2*py+yey) + 0.25*sqr(2*pz+yez));
+
 
 
     const double _bx=yhx*d2gm;
@@ -715,8 +714,7 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     const double bxz=_bx*_bz;
     const double byz=_by*_bz;
 
-    const double ddt=1.0f/(1.0f+bx2+by2+bz2);
-    //printf("AAA %le\n",ddt);
+    const double ddt=1.0/(1.0+bx2+by2+bz2);
 
     px=ddt*(fx*(1.0+bx2)+fy*(bxy-_bz)  +fz*(bxz+_by));
     py=ddt*(fx*(bxy+_bz)  +fy*(1.0+by2)+fz*(byz-_bx));
