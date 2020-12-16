@@ -2,7 +2,7 @@
 #define __GPU_CODE__H__PIC__
 
 #include "common.h"
-#define EXCHANGE_PARTICLES_COUNT (1024)
+#define EXCHANGE_PARTICLES_COUNT (1024*1024)
 
 #include <cuda.h>
 #include <driver_types.h>

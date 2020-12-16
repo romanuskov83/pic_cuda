@@ -329,7 +329,7 @@ bool gpuExchangeParticles(GpuState *state, ParticleInfo *particles, int& countIn
 
 
 
-    printf("AVAILABLE PARTICLES %d PARTICLES TO SEND %d\n",-state->exchangeCounters[0], state->exchangeCounters[1] - (state->exchangeCounters[0] > 0 ? PARTICLE_BLOCK_SIZE*EXCHANGE_PARTICLES_BLOCKS-state->exchangeCounters[0]: 0));
+    //printf("AVAILABLE PARTICLES %d PARTICLES TO SEND %d\n",-state->exchangeCounters[0], state->exchangeCounters[1] - (state->exchangeCounters[0] > 0 ? PARTICLE_BLOCK_SIZE*EXCHANGE_PARTICLES_BLOCKS-state->exchangeCounters[0]: 0));
 
 
     cudaStatus = cudaMemcpyAsync(state->exchangeParticlesBlocksHost,state->exchangeParticlesBlocks, sizeof(ParticlesBlock)*EXCHANGE_PARTICLES_BLOCKS,cudaMemcpyDeviceToHost,state->exchangesStream);
@@ -349,7 +349,7 @@ bool gpuExchangeParticles(GpuState *state, ParticleInfo *particles, int& countIn
     cudaEventSynchronize(stop);
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
-    std::cout << "EXCHANGEs DONE IN " << milliseconds << "ms\n";
+    //std::cout << "EXCHANGEs DONE IN " << milliseconds << "ms\n";
 
 
     for(int i = 0; i < state->exchangeCounters[1]; i++) {
@@ -491,6 +491,108 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
 
     //currents_1(Me*Qe*particlesBlocks[bi].weight[pi],ix,iy,iz,rx,ry,rz,vx*time,vy*time,vz*time);
 
+    const float qpart = Me*Qe*particlesBlocks[bi].weight[pi];
+    float cube0[2][2][2];
+    float cube1[2][2][2];
+    float cubed[2][2][2];
+
+    const int baseIx = vx > 0 ? 0 : 1;
+    const int baseIy = vy > 0 ? 0 : 1;
+    const int baseIz = vz > 0 ? 0 : 1;
+
+    const int diffIx = vx > 0 ? 1 : -1;
+    const int diffIy = vy > 0 ? 1 : -1;
+    const int diffIz = vz > 0 ? 1 : -1;
+
+
+    const float dx_n = vx*time/(toX-fromX);
+    const float dy_n = vy*time/(toY-fromY);
+    const float dz_n = vz*time/(toZ-fromZ);
+
+    const float sum = abs(dx_n) + abs(dy_n) + abs(dz_n);
+
+    float wx;
+    float wy;
+    float wz;
+
+    float wx_y;
+    float wx_z;
+    float wy_x;
+    float wy_z;
+    float wz_x;
+    float wz_y;
+
+    if(sum < 1e-15f) {
+        wy = wz = wx = 1.0f/3;
+        wx_y = wx_z = wy_x = wy_z = wz_x = wz_y = 0.5f
+    } else {
+        wx = abs(dx_n/sum);
+        wy = abs(dy_n/sum);
+        wz = 1.0f-(wx+wy);
+
+        const float qx_sum = wy+wz;
+        if(qx_sum < 1e-15f) {
+            wx_y = wx_z = 0.5f;
+        } else {
+            wx_y = wy/qx_sum;
+            wx_z = 1.0f - wx_y;
+        }
+
+        const float qy_sum = wx+wz;
+        if(qy_sum < 1e-15f) {
+            wy_x = wy_z = 0.5f;
+        } else {
+            wy_x = wx/qy_sum;
+            wy_z = 1.0f - wy_x;
+        }
+
+        const float qz_sum = wx+wy;
+        if(qz_sum < 1e-15f) {
+            wz_x = wz_y = 0.5f;
+        } else {
+            wz_y = wy/qz_sum;
+            wz_x = 1.0f - wz_y;
+        }
+
+    }
+
+    const float rnew_x = rx + vx*time;
+    const float rnew_y = ry + vy*time;
+    const float rnew_z = rz + vz*time;
+
+    float V = (toX-fromX)*(toY-fromY)*(toZ-fromZ);
+
+    for(int i = 0; i < 2; ++i) {
+        for(int j = 0; j < 2; ++j) {
+            for(int k = 0; k < 2; ++k) {
+                cube0[i][j][k] = abs(rx - ( i==0 ? toX : fromX) )*abs(ry - ( j==0 ? toY : fromY) )*abs(rz - ( j==0 ? toZ : fromZ) )/V;
+                cube1[i][j][k] = abs(rnew_x - ( i==0 ? toX : fromX) )*abs(rnew_y - ( j==0 ? toY : fromY) )*abs(rnew_z - ( j==0 ? toZ : fromZ) )/V;
+                cubed[i][j][k] = (cube1[i][j][k] - cube0[i][j][k])*qpart*(endTime-startTime);
+            }
+        }
+    }
+
+
+    const float qa = cubed[baseIx][baseIy][baseIz];
+    const float qjx = qa*wx;
+    const float qjy = qa*wy;
+    const float qjz = qa*wz;
+
+
+    const int offset = 12*(bx*gridNx*gridNy*gridNz+cellId);
+
+    cubed[1-baseIx,baseIy,baseIz] -= qjx;
+    cubed[baseIx,1-baseIy,baseIz] -= qjy;
+    cubed[baseIx,baseIy,1-baseIz] -= qjz;
+
+
+    atomicAdd(currentData+offset,px);
+
+
+
+
+
+
     //!коэффициенты для целых точек
     float cx =(rx-fromX)/(toX-fromX);
     float cy =(ry-fromY)/(toY-fromY);
@@ -559,9 +661,6 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     };
 
 
-//    printf("ZZZZ %f\n",(fromX+toX)/2);
-//    printf("ZZZZ %f\n",(gridDataX[ix+2]+toX)/2);
-//    printf("\t\t%f %f %f - %d %d %d / %f %f %f - %d %d %d / %f %f %f\n", rx,ry,rz,ix,iy,iz,cx,cy,cz,ixc,iyc,izc,cxc,cyc,czc);
 
     if(toBorderTime > endTime-currentTime) {
         rx += vx*time;
@@ -570,7 +669,6 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
         currentTime = endTime;
 
     } else {
-        //printf("REACHED BORDER\n");
 
         rx += vx*toBorderTime;
         ry += vy*toBorderTime;
@@ -630,6 +728,7 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
 
     }
 
+    //printf("%e %e %e\n",rx,ry,rz);
 
     const float cfield = -Qe*time*Ee/(C*Me);
 
@@ -689,7 +788,6 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
                       hZ[cel_idx(ixc,iyc+1,iz+1,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(cyc)*(cz)+
                       hZ[cel_idx(ixc+1,iyc+1,iz+1,gridNx,gridNy,gridNz+1)]*(cxc)*(cyc)*(cz));
 
-    printf("%f %f %f\n",rx,ry,rz);
 
     //!ux,uy,uz calculation
     px-=yex;
@@ -730,25 +828,6 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     particlesBlocks[bi].pz[pi] = pz;
 
     particlesBlocks[bi].currentTime[pi] = currentTime;
-
-
-    const int offset = 12*(bx*gridNx*gridNy*gridNz+cellId);
-
-    atomicAdd(currentData+offset,px);
-    atomicAdd(currentData+offset+1,py);
-    atomicAdd(currentData+offset+2,pz);
-
-    atomicAdd(currentData+offset+3,px);
-    atomicAdd(currentData+offset+4,py);
-    atomicAdd(currentData+offset+5,pz);
-
-    atomicAdd(currentData+offset+6,px);
-    atomicAdd(currentData+offset+7,py);
-    atomicAdd(currentData+offset+8,pz);
-
-    atomicAdd(currentData+offset+9,px);
-    atomicAdd(currentData+offset+10,py);
-    atomicAdd(currentData+offset+11,pz);
 
 }
 
