@@ -390,6 +390,9 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     int pIdx;
     int bi=0;
     int pi=0;
+    int ix = 0;
+    int iy = 0;
+    int iz = 0;
 
     Coordinate rx;
     Coordinate ry;
@@ -422,18 +425,12 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
     exchangeCounters[2] = 1;
 
     const int cellId = particlesBlocks[bi].cellIdFlag[pi] & CELL_ID_MASK;
-    const int ix = x_idx(cellId,gridNx,gridNy,gridNz);
-    const int iy = y_idx(cellId,gridNx,gridNy,gridNz);
-    const int iz = z_idx(cellId,gridNx,gridNy,gridNz);
+    ix = x_idx(cellId,gridNx,gridNy,gridNz);
+    iy = y_idx(cellId,gridNx,gridNy,gridNz);
+    iz = z_idx(cellId,gridNx,gridNy,gridNz);
 
     const Coordinate* gridDataY = gridDataX+gridNx+1;
     const Coordinate* gridDataZ = gridDataX+gridNx+gridNy+2;
-
-    const FieldComponent* eY = eX+gridNx*(gridNy+1)*(gridNz+1);
-    const FieldComponent* eZ = eX+gridNx*(gridNy+1)*(gridNz+1)+(gridNx+1)*gridNy*(gridNz+1);
-
-    const FieldComponent* hY = hX+(gridNx+1)*gridNy*gridNz;
-    const FieldComponent* hZ = hX+(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz;
 
 
     const Coordinate fromX = gridDataX[ix];
@@ -491,7 +488,7 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
 
     //currents_1(Me*Qe*particlesBlocks[bi].weight[pi],ix,iy,iz,rx,ry,rz,vx*time,vy*time,vz*time);
 
-    const float qpart = Me*Qe*particlesBlocks[bi].weight[pi];
+    /*const float qpart = Me*Qe*particlesBlocks[bi].weight[pi];
     float cube0[2][2][2];
     float cube1[2][2][2];
     float cubed[2][2][2];
@@ -587,18 +584,17 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
 
 
     atomicAdd(currentData+offset,px);
+*/
 
 
 
 
 
-
-    //!коэффициенты для целых точек
     float cx =(rx-fromX)/(toX-fromX);
     float cy =(ry-fromY)/(toY-fromY);
     float cz =(rz-fromZ)/(toZ-fromZ);
 
-    int ixc;
+    int ixc=0;
     int iyc=0;
     int izc=0;
     float cxc;
@@ -728,7 +724,7 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
 
     }
 
-    //printf("%e %e %e\n",rx,ry,rz);
+    printf("%e %e %e\n",rx,ry,rz);
 
     const float cfield = -Qe*time*Ee/(C*Me);
 
@@ -743,23 +739,23 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
                       eX[cel_idx(ixc+1,iy+1,iz+1,gridNx,gridNy+1,gridNz+1)]*(cxc)*(cy)*(cz));
 
 
-    const float yey=cfield*(eY[cel_idx(ix,iyc,iz,gridNx+1,gridNy,gridNz+1)]*(1.0f-cx)*(1.0f-cyc)*(1.0f-cz) +
-                      eY[cel_idx(ix+1,iyc,iz,gridNx+1,gridNy,gridNz+1)]*(cx)*(1.0f-cyc)*(1.0f-cz) +
-                      eY[cel_idx(ix,iyc+1,iz,gridNx+1,gridNy,gridNz+1)]*(1.0f-cx)*(cyc)*(1.0f-cz) +
-                      eY[cel_idx(ix+1,iyc+1,iz,gridNx+1,gridNy,gridNz+1)]*(cx)*(cyc)*(1.0f-cz) +
-                      eY[cel_idx(ix,iyc,iz+1,gridNx+1,gridNy,gridNz+1)]*(1.0f-cx)*(1.0f-cyc)*(cz) +
-                      eY[cel_idx(ix+1,iyc,iz+1,gridNx+1,gridNy,gridNz+1)]*(cx)*(1.0f-cyc)*(cz) +
-                      eY[cel_idx(ix,iyc+1,iz+1,gridNx+1,gridNy,gridNz+1)]*(1.0f-cx)*(cyc)*(cz) +
-                      eY[cel_idx(ix+1,iyc+1,iz+1,gridNx+1,gridNy,gridNz+1)]*(cx)*(cyc)*(cz));
+    const float yey=cfield*(eX[gridNx*(gridNy+1)*(gridNz+1)+cel_idx(ix,iyc,iz,gridNx+1,gridNy,gridNz+1)]*(1.0f-cx)*(1.0f-cyc)*(1.0f-cz) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+cel_idx(ix+1,iyc,iz,gridNx+1,gridNy,gridNz+1)]*(cx)*(1.0f-cyc)*(1.0f-cz) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+cel_idx(ix,iyc+1,iz,gridNx+1,gridNy,gridNz+1)]*(1.0f-cx)*(cyc)*(1.0f-cz) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+cel_idx(ix+1,iyc+1,iz,gridNx+1,gridNy,gridNz+1)]*(cx)*(cyc)*(1.0f-cz) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+cel_idx(ix,iyc,iz+1,gridNx+1,gridNy,gridNz+1)]*(1.0f-cx)*(1.0f-cyc)*(cz) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+cel_idx(ix+1,iyc,iz+1,gridNx+1,gridNy,gridNz+1)]*(cx)*(1.0f-cyc)*(cz) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+cel_idx(ix,iyc+1,iz+1,gridNx+1,gridNy,gridNz+1)]*(1.0f-cx)*(cyc)*(cz) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+cel_idx(ix+1,iyc+1,iz+1,gridNx+1,gridNy,gridNz+1)]*(cx)*(cyc)*(cz));
 
-    const float yez=cfield*(eZ[cel_idx(ix,iy,izc,gridNx+1,gridNy+1,gridNz)]*(1.0f-cx)*(1.0f-cy)*(1.0f-czc) +
-                      eZ[cel_idx(ix+1,iy,izc,gridNx+1,gridNy+1,gridNz)]*(cx)*(1.0f-cy)*(1.0f-czc) +
-                      eZ[cel_idx(ix,iy+1,izc,gridNx+1,gridNy+1,gridNz)]*(1.0f-cx)*(cy)*(1.0f-czc) +
-                      eZ[cel_idx(ix+1,iy+1,izc,gridNx+1,gridNy+1,gridNz)]*(cx)*(cy)*(1.0f-czc) +
-                      eZ[cel_idx(ix,iy,izc+1,gridNx+1,gridNy+1,gridNz)]*(1.0f-cx)*(1.0f-cy)*(czc) +
-                      eZ[cel_idx(ix+1,iy,izc+1,gridNx+1,gridNy+1,gridNz)]*(cx)*(1.0f-cy)*(czc) +
-                      eZ[cel_idx(ix,iy+1,izc+1,gridNx+1,gridNy+1,gridNz)]*(1.0f-cx)*(cy)*(czc) +
-                      eZ[cel_idx(ix+1,iy+1,izc+1,gridNx+1,gridNy+1,gridNz)]*(cx)*(cy)*(czc));
+    const float yez=cfield*(eX[gridNx*(gridNy+1)*(gridNz+1)+(gridNx+1)*gridNy*(gridNz+1)+cel_idx(ix,iy,izc,gridNx+1,gridNy+1,gridNz)]*(1.0f-cx)*(1.0f-cy)*(1.0f-czc) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+(gridNx+1)*gridNy*(gridNz+1)+cel_idx(ix+1,iy,izc,gridNx+1,gridNy+1,gridNz)]*(cx)*(1.0f-cy)*(1.0f-czc) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+(gridNx+1)*gridNy*(gridNz+1)+cel_idx(ix,iy+1,izc,gridNx+1,gridNy+1,gridNz)]*(1.0f-cx)*(cy)*(1.0f-czc) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+(gridNx+1)*gridNy*(gridNz+1)+cel_idx(ix+1,iy+1,izc,gridNx+1,gridNy+1,gridNz)]*(cx)*(cy)*(1.0f-czc) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+(gridNx+1)*gridNy*(gridNz+1)+cel_idx(ix,iy,izc+1,gridNx+1,gridNy+1,gridNz)]*(1.0f-cx)*(1.0f-cy)*(czc) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+(gridNx+1)*gridNy*(gridNz+1)+cel_idx(ix+1,iy,izc+1,gridNx+1,gridNy+1,gridNz)]*(cx)*(1.0f-cy)*(czc) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+(gridNx+1)*gridNy*(gridNz+1)+cel_idx(ix,iy+1,izc+1,gridNx+1,gridNy+1,gridNz)]*(1.0f-cx)*(cy)*(czc) +
+                      eX[gridNx*(gridNy+1)*(gridNz+1)+(gridNx+1)*gridNy*(gridNz+1)+cel_idx(ix+1,iy+1,izc+1,gridNx+1,gridNy+1,gridNz)]*(cx)*(cy)*(czc));
 
     float yhx=cfield*(hX[cel_idx(ix,iyc,izc,gridNx+1,gridNy,gridNz)]*(1.0f-cx)*(1.0f-cyc)*(1.0f-czc)+
                       hX[cel_idx(ix+1,iyc,izc,gridNx+1,gridNy,gridNz)]*(cx)*(1.0f-cyc)*(1.0f-czc)+
@@ -770,23 +766,23 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
                       hX[cel_idx(ix,iyc+1,izc+1,gridNx+1,gridNy,gridNz)]*(1.0f-cx)*(cyc)*(czc)+
                       hX[cel_idx(ix+1,iyc+1,izc+1,gridNx+1,gridNy,gridNz)]*(cx)*(cyc)*(czc));
 
-    float yhy=cfield*(hY[cel_idx(ixc,iy,izc,gridNx,gridNy+1,gridNz)]*(1.0f-cxc)*(1.0f-cy)*(1.0f-czc)+
-                      hY[cel_idx(ixc+1,iy,izc,gridNx,gridNy+1,gridNz)]*(cxc)*(1.0f-cy)*(1.0f-czc)+
-                      hY[cel_idx(ixc,iy+1,izc,gridNx,gridNy+1,gridNz)]*(1.0f-cxc)*(cy)*(1.0f-czc)+
-                      hY[cel_idx(ixc+1,iy+1,izc,gridNx,gridNy+1,gridNz)]*(cxc)*(cy)*(1.0f-czc)+
-                      hY[cel_idx(ixc,iy,izc+1,gridNx,gridNy+1,gridNz)]*(1.0f-cxc)*(1.0f-cy)*(czc)+
-                      hY[cel_idx(ixc+1,iy,izc+1,gridNx,gridNy+1,gridNz)]*(cxc)*(1.0f-cy)*(czc)+
-                      hY[cel_idx(ixc,iy+1,izc+1,gridNx,gridNy+1,gridNz)]*(1.0f-cxc)*(cy)*(czc)+
-                      hY[cel_idx(ixc+1,iy+1,izc+1,gridNx,gridNy+1,gridNz)]*(cxc)*(cy)*(czc));
+    float yhy=cfield*(hX[(gridNx+1)*gridNy*gridNz+cel_idx(ixc,iy,izc,gridNx,gridNy+1,gridNz)]*(1.0f-cxc)*(1.0f-cy)*(1.0f-czc)+
+                      hX[(gridNx+1)*gridNy*gridNz+cel_idx(ixc+1,iy,izc,gridNx,gridNy+1,gridNz)]*(cxc)*(1.0f-cy)*(1.0f-czc)+
+                      hX[(gridNx+1)*gridNy*gridNz+cel_idx(ixc,iy+1,izc,gridNx,gridNy+1,gridNz)]*(1.0f-cxc)*(cy)*(1.0f-czc)+
+                      hX[(gridNx+1)*gridNy*gridNz+cel_idx(ixc+1,iy+1,izc,gridNx,gridNy+1,gridNz)]*(cxc)*(cy)*(1.0f-czc)+
+                      hX[(gridNx+1)*gridNy*gridNz+cel_idx(ixc,iy,izc+1,gridNx,gridNy+1,gridNz)]*(1.0f-cxc)*(1.0f-cy)*(czc)+
+                      hX[(gridNx+1)*gridNy*gridNz+cel_idx(ixc+1,iy,izc+1,gridNx,gridNy+1,gridNz)]*(cxc)*(1.0f-cy)*(czc)+
+                      hX[(gridNx+1)*gridNy*gridNz+cel_idx(ixc,iy+1,izc+1,gridNx,gridNy+1,gridNz)]*(1.0f-cxc)*(cy)*(czc)+
+                      hX[(gridNx+1)*gridNy*gridNz+cel_idx(ixc+1,iy+1,izc+1,gridNx,gridNy+1,gridNz)]*(cxc)*(cy)*(czc));
     
-    float yhz=cfield*(hZ[cel_idx(ixc,iyc,iz,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(1.0f-cyc)*(1.0f-cz)+
-                      hZ[cel_idx(ixc+1,iyc,iz,gridNx,gridNy,gridNz+1)]*(cxc)*(1.0f-cyc)*(1.0f-cz)+
-                      hZ[cel_idx(ixc,iyc+1,iz,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(cyc)*(1.0f-cz)+
-                      hZ[cel_idx(ixc+1,iyc+1,iz,gridNx,gridNy,gridNz+1)]*(cxc)*(cyc)*(1.0f-cz)+
-                      hZ[cel_idx(ixc,iyc,iz+1,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(1.0f-cyc)*(cz)+
-                      hZ[cel_idx(ixc+1,iyc,iz+1,gridNx,gridNy,gridNz+1)]*(cxc)*(1.0f-cyc)*(cz)+
-                      hZ[cel_idx(ixc,iyc+1,iz+1,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(cyc)*(cz)+
-                      hZ[cel_idx(ixc+1,iyc+1,iz+1,gridNx,gridNy,gridNz+1)]*(cxc)*(cyc)*(cz));
+    float yhz=cfield*(hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc,iyc,iz,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(1.0f-cyc)*(1.0f-cz)+
+                      hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc+1,iyc,iz,gridNx,gridNy,gridNz+1)]*(cxc)*(1.0f-cyc)*(1.0f-cz)+
+                      hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc,iyc+1,iz,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(cyc)*(1.0f-cz)+
+                      hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc+1,iyc+1,iz,gridNx,gridNy,gridNz+1)]*(cxc)*(cyc)*(1.0f-cz)+
+                      hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc,iyc,iz+1,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(1.0f-cyc)*(cz)+
+                      hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc+1,iyc,iz+1,gridNx,gridNy,gridNz+1)]*(cxc)*(1.0f-cyc)*(cz)+
+                      hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc,iyc+1,iz+1,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(cyc)*(cz)+
+                      hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc+1,iyc+1,iz+1,gridNx,gridNy,gridNz+1)]*(cxc)*(cyc)*(cz));
 
 
     //!ux,uy,uz calculation
@@ -862,7 +858,7 @@ bool gpuMakeStep(GpuState* state, float startTime, float endTime) {
     cudaStatus = cudaStreamSynchronize(state->modellingStream);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemsetAsync failed! currentData");
-        return NULL;
+        return false;
     }
 
 
