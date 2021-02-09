@@ -4,8 +4,9 @@
 #include "common.h"
 #define EXCHANGE_PARTICLES_COUNT (1024*1024)
 
-#include <cuda.h>
-#include <driver_types.h>
+
+
+struct CUstream_st;
 
 typedef struct {
     int deviceId;
@@ -32,6 +33,7 @@ typedef struct {
     ParticlesBlock* exchangeParticlesBlocks;
     ParticlesBlock* exchangeParticlesBlocksHost;
     int* exchangeCounters;
+    float *position;
 
 #ifdef CELL_BOUND_BLOCKS
     unsigned int* startBlock;
@@ -41,8 +43,8 @@ typedef struct {
     int workingBlocksCount;
 #endif
 
-    cudaStream_t modellingStream;
-    cudaStream_t exchangesStream;
+    CUstream_st* modellingStream;
+    CUstream_st* exchangesStream;
 
 } GpuState;
 
@@ -50,5 +52,6 @@ typedef struct {
 GpuState* gpuInit(int deviceId, int gridNx, int gridNy, int gridNz, Coordinate* gridX, Coordinate* gridY, Coordinate* gridZ);
 bool gpuUpdateFieldsData(GpuState* gpuState,FieldComponent* electricData, FieldComponent* magneticData);
 bool gpuExchangeParticles(GpuState *state, ParticleInfo *particles, int& countIn, int& countOut);
+bool gpuDumpParticles(GpuState *state, ParticleInfo *particles, int& countOut);
 bool gpuMakeStep(GpuState* state,float startTime, float endTime);
 #endif

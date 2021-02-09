@@ -7,7 +7,7 @@
 #define tx threadIdx.x
 #define bx blockIdx.x
 
-#define GPU_RESOURCE_UTILIZATION_FACTOR 0.9f
+#define GPU_RESOURCE_UTILIZATION_FACTOR 0.5f
 
 #define EXCHANGE_PARTICLES_BLOCKS (EXCHANGE_PARTICLES_COUNT/PARTICLE_BLOCK_SIZE)
 
@@ -41,7 +41,7 @@ GpuState* gpuInit(int deviceId, int gridNx, int gridNy, int gridNz, Coordinate *
         std::cerr << "cudaGetDeviceProperties failed! ";
         return NULL;
     }
-    std::cout << "Using " << props.name << " with " << props.multiProcessorCount << " MP\n";
+    //std::cout << "Using " << props.name << " with " << props.multiProcessorCount << " MP\n";
 
     cudaStatus = cudaStreamCreate(&result->modellingStream);
     if (cudaStatus != cudaSuccess) {
@@ -59,14 +59,20 @@ GpuState* gpuInit(int deviceId, int gridNx, int gridNy, int gridNz, Coordinate *
     result->particlesBlocksCount = (int)((props.totalGlobalMem*GPU_RESOURCE_UTILIZATION_FACTOR
                                           -gridDim*3*sizeof(FieldComponent)-gridPlusOneDim*3*sizeof(FieldComponent)
                                           -(gridNx+1+gridNy+1+gridNz+1)*sizeof(Coordinate)
-                                          -sizeof(ParticlesBlock)*EXCHANGE_PARTICLES_BLOCKS-gridDim*12*sizeof(FieldComponent)*result->workingBlocksCount)/sizeof(ParticlesBlock));
-    std::cout << "Particles blocks count: " << result->particlesBlocksCount << "\n";
+                                          -sizeof(ParticlesBlock)*EXCHANGE_PARTICLES_BLOCKS/*-gridDim*12*sizeof(FieldComponent)*result->workingBlocksCount*/)/sizeof(ParticlesBlock));
+    //std::cout << "Particles blocks count: " << result->particlesBlocksCount << "\n";
 
 
 
     cudaStatus = cudaMallocManaged(&result->exchangeCounters, 3*sizeof(int));
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMallocManaged failed! exchangeCounters");
+        return NULL;
+    }
+
+    cudaStatus = cudaMallocManaged(&result->position, 4*sizeof(float));
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMallocManaged failed! position");
         return NULL;
     }
 
@@ -138,11 +144,11 @@ GpuState* gpuInit(int deviceId, int gridNx, int gridNy, int gridNz, Coordinate *
 
     result->currentDataHost = (FieldComponent *)malloc(sizeof(FieldComponent)*gridDim*12);
 
-    cudaStatus = cudaMalloc(&result->currentData, sizeof(FieldComponent)*gridDim*12*result->workingBlocksCount);
+    /*cudaStatus = cudaMalloc(&result->currentData, sizeof(FieldComponent)*gridDim*12*result->workingBlocksCount);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMalloc failed! currentData");
         return NULL;
-    }
+    }*/
 
 
 
@@ -165,11 +171,11 @@ bool gpuUpdateFieldsData(GpuState* gpuState,FieldComponent* electricData, FieldC
         return false;
     }
 
-    cudaStatus = cudaMemset(gpuState->currentData, 0x0, sizeof(FieldComponent)*gpuState->gridNx*gpuState->gridNy*gpuState->gridNz*12);
+    /*cudaStatus = cudaMemset(gpuState->currentData, 0x0, sizeof(FieldComponent)*gpuState->gridNx*gpuState->gridNy*gpuState->gridNz*12);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemset failed! currentData");
         return false;
-    }
+    }*/
 
 
     return true;
@@ -179,7 +185,8 @@ bool gpuUpdateFieldsData(GpuState* gpuState,FieldComponent* electricData, FieldC
 
 /*Exchanges stream*/
 
-__global__ __launch_bounds__(1024, 1) void exchangeParticles(ParticlesBlock* modellingBlocks, int modellingBlocksCount, ParticlesBlock* exchangeBlocks, int* countersGlobal) {
+__global__ __launch_bounds__(1024, 1) void exchangeParticles(ParticlesBlock* modellingBlocks, int modellingBlocksCount, ParticlesBlock* exchangeBlocks, int* countersGlobal,
+                                                             bool isDumping = false) {
     __shared__ int counters[2];
     if(tx == 0) {
         counters[0] = *countersGlobal;
@@ -190,7 +197,7 @@ __global__ __launch_bounds__(1024, 1) void exchangeParticles(ParticlesBlock* mod
     int iterations = totalModelling/blockDim.x;
 
     /* Put new particles in */
-    for(int i = 0; i < iterations; i++) {
+    for(int i = 0; i < iterations && !isDumping; i++) {
         int pIdx = i*blockDim.x + tx;
         int bi = pIdx/PARTICLE_BLOCK_SIZE;
         int pi = pIdx%PARTICLE_BLOCK_SIZE;
@@ -226,12 +233,12 @@ __global__ __launch_bounds__(1024, 1) void exchangeParticles(ParticlesBlock* mod
 
     __syncthreads();
 
-    /* Put new particles in */
+    /* Get particles out */
     for(int i = 0; i < iterations; i++) {
         int pIdx = i*blockDim.x + tx;
         int bi = pIdx/PARTICLE_BLOCK_SIZE;
         int pi = pIdx%PARTICLE_BLOCK_SIZE;
-        if((modellingBlocks[bi].cellIdFlag[pi] & FLAG_MASK) > FLAG_OK) {
+        if((isDumping && (modellingBlocks[bi].cellIdFlag[pi] & FLAG_MASK) == FLAG_OK) || (!isDumping && (modellingBlocks[bi].cellIdFlag[pi] & FLAG_MASK) > FLAG_OK)) {
             int old = atomicAdd(counters+1,1);
             if(old < EXCHANGE_PARTICLES_BLOCKS*PARTICLE_BLOCK_SIZE) {
                 int bi2 = old/PARTICLE_BLOCK_SIZE;
@@ -258,6 +265,59 @@ __global__ __launch_bounds__(1024, 1) void exchangeParticles(ParticlesBlock* mod
         countersGlobal[0] = counters[0];
         countersGlobal[1] = counters[1];
     }
+}
+
+bool gpuDumpParticles(GpuState *state, ParticleInfo *particles, int& countOut) {
+    dim3 blocks;
+    blocks.x = 1;
+    blocks.y = 1;
+    blocks.z = 1;
+    dim3 threads;
+    threads.x = 1024;
+    threads.y = 1;
+    threads.z = 1;
+
+    exchangeParticles<<<blocks,threads,0,state->modellingStream>>>(state->particlesBlocks, state->particlesBlocksCount,state->exchangeParticlesBlocks, state->exchangeCounters,true);
+    cudaError_t cudaStatus;
+
+    cudaStatus = cudaStreamSynchronize(state->modellingStream);
+    if(cudaStatus != cudaSuccess) {
+        std::cerr << "Kernel failed: exchangeParticles " << cudaStatus <<"\n";
+        return false;
+    }
+
+
+    cudaStatus = cudaMemcpyAsync(state->exchangeParticlesBlocksHost,state->exchangeParticlesBlocks, sizeof(ParticlesBlock)*EXCHANGE_PARTICLES_BLOCKS,cudaMemcpyDeviceToHost,state->modellingStream);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemcpy failed! exchangeParticlesBlocks");
+        return false;
+    }
+
+    cudaStatus = cudaStreamSynchronize(state->modellingStream);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemcpy failed! exchangesStream");
+        return false;
+    }
+
+
+    for(int i = 0; i < state->exchangeCounters[1] && i < EXCHANGE_PARTICLES_COUNT; i++) {
+        particles[i].rx = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].rx[i%PARTICLE_BLOCK_SIZE];
+        particles[i].ry = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].ry[i%PARTICLE_BLOCK_SIZE];
+        particles[i].rz = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].rz[i%PARTICLE_BLOCK_SIZE];
+
+        particles[i].px = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].px[i%PARTICLE_BLOCK_SIZE];
+        particles[i].py = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].py[i%PARTICLE_BLOCK_SIZE];
+        particles[i].pz = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].pz[i%PARTICLE_BLOCK_SIZE];
+
+        particles[i].weight = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].weight[i%PARTICLE_BLOCK_SIZE];
+        particles[i].currentTime = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].currentTime[i%PARTICLE_BLOCK_SIZE];
+        particles[i].cellIdFlag = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].cellIdFlag[i%PARTICLE_BLOCK_SIZE];
+        particles[i].id = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].id[i%PARTICLE_BLOCK_SIZE];
+
+    }
+
+    countOut = state->exchangeCounters[1];
+    return true;
 }
 
 bool gpuExchangeParticles(GpuState *state, ParticleInfo *particles, int& countIn, int& countOut) {
@@ -352,7 +412,7 @@ bool gpuExchangeParticles(GpuState *state, ParticleInfo *particles, int& countIn
     //std::cout << "EXCHANGEs DONE IN " << milliseconds << "ms\n";
 
 
-    for(int i = 0; i < state->exchangeCounters[1]; i++) {
+    for(int i = 0; i < state->exchangeCounters[1] && i < EXCHANGE_PARTICLES_COUNT; i++) {
         particles[i].rx = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].rx[i%PARTICLE_BLOCK_SIZE];
         particles[i].ry = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].ry[i%PARTICLE_BLOCK_SIZE];
         particles[i].rz = state->exchangeParticlesBlocksHost[i/PARTICLE_BLOCK_SIZE].rz[i%PARTICLE_BLOCK_SIZE];
@@ -381,7 +441,7 @@ bool gpuExchangeParticles(GpuState *state, ParticleInfo *particles, int& countIn
 
 //__launch_bounds__(PARTICLE_BLOCK_SIZE, 16)
 
-__global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCount,const FieldComponent* eX, const FieldComponent* hX, FieldComponent* currentData,const float startTime, const float endTime,const int gridNx, const int gridNy, const int gridNz, const Coordinate* gridDataX, int* exchangeCounters
+__global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCount,const FieldComponent* eX, const FieldComponent* hX, FieldComponent* currentData,const float startTime, const float endTime,const int gridNx, const int gridNy, const int gridNz, const Coordinate* gridDataX, int* exchangeCounters, float* pos
 )
 {
 
@@ -483,8 +543,34 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
         toBorderTimeZ = 1e9f;
     }
 
-    Coordinate toBorderTime = min(toBorderTimeX,min(toBorderTimeY,toBorderTimeZ));
-    const Coordinate time = min(toBorderTime,endTime-currentTime);
+    const Coordinate toBorderTime = min(toBorderTimeX,min(toBorderTimeY,toBorderTimeZ));
+
+/*
+    const Coordinate dA = (vx*vx+vy*vy+vz*vz);
+    const Coordinate dB = 2*(vx*rx + vy*ry + vz*rz);
+    const Coordinate dC = (rx*rx+ry*ry+rz*rz-A*A);
+
+    const Coordinate dD = dB*dB - 4*dA*dC;
+
+
+    Coordinate toSphereTime = -1;
+    if(dD > 0) {
+        const Coordinate v1 = (-dB + sqrtf(dD))/(2*dA);
+        const Coordinate v2 = (-dB - sqrtf(dD))/(2*dA);
+        toSphereTime = v1 > 0 ? v1 : -1;
+        if(v2 > 0 && (toSphereTime == -1 || toSphereTime > v2)) {
+            toSphereTime = v2;
+        }
+    }
+*/
+    Coordinate time = min(toBorderTime,endTime-currentTime);
+  /*  if(toSphereTime > 1e-12) {
+        time = min(time,toSphereTime);
+    }
+
+    bool wasOut = rx*rx + ry*ry + rz*rz > A*A;*/
+
+
 
     //currents_1(Me*Qe*particlesBlocks[bi].weight[pi],ix,iy,iz,rx,ry,rz,vx*time,vy*time,vz*time);
 
@@ -658,11 +744,11 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
 
 
 
-    if(toBorderTime > endTime-currentTime) {
+    if(toBorderTime > time) {
         rx += vx*time;
         ry += vy*time;
         rz += vz*time;
-        currentTime = endTime;
+        currentTime += time;
 
     } else {
 
@@ -724,7 +810,11 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
 
     }
 
-    printf("%e %e %e\n",rx,ry,rz);
+    printf("%e %e %e %e\n",rx,ry,rz,currentTime);
+    pos[0] = rx;
+    pos[1] = ry;
+    pos[2] = rz;
+    pos[3] = currentTime;
 
     const float cfield = -Qe*time*Ee/(C*Me);
 
@@ -784,6 +874,36 @@ __global__  void makeStep(ParticlesBlock* particlesBlocks, int particlesBlocksCo
                       hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc,iyc+1,iz+1,gridNx,gridNy,gridNz+1)]*(1.0f-cxc)*(cyc)*(cz)+
                       hX[(gridNx+1)*gridNy*gridNz+gridNx*(gridNy+1)*gridNz+cel_idx(ixc+1,iyc+1,iz+1,gridNx,gridNy,gridNz+1)]*(cxc)*(cyc)*(cz));
 
+
+#ifdef ASDASDASD
+    float r = sqrtf(sqr(rx)+sqr(ry)+sqr(rz));
+
+
+
+    /*if(toSphereTime == time) {
+        if(wasOut) {
+//            printf("ASD1\n");
+            yhx = -3*H0*rx*rz*A*A*A/(2*powf(r,5))*cfield;
+            yhy = -3*H0*ry*rz*A*A*A/(2*powf(r,5))*cfield;
+            yhz = H0*(1+A*A*A*((rx*rx+ry*ry)/2-rz*rz)/powf(r,5))*cfield;
+        } else {
+//            printf("ASD2\n");
+            yhx = 0;
+            yhy = 0;
+            yhz = 0;
+        }
+    } else {*/
+        if (r < A) {
+            yhx = 0;
+            yhy = 0;
+            yhz = 0;
+        } else {
+            yhx = -3*H0*rx*rz*A*A*A/(2*powf(r,5))*cfield;
+            yhy = -3*H0*ry*rz*A*A*A/(2*powf(r,5))*cfield;
+            yhz = H0*(1+A*A*A*((rx*rx+ry*ry)/2-rz*rz)/powf(r,5))*cfield;
+        }
+    //}
+#endif
 
     //!ux,uy,uz calculation
     px-=yex;
@@ -880,13 +1000,15 @@ bool gpuMakeStep(GpuState* state, float startTime, float endTime) {
 
         //cudaEventRecord(start);
         makeStep << < blocks, threads, 0, state->modellingStream >> >
-                                          (state->particlesBlocks, state->particlesBlocksCount, state->electricData, state->magneticData, state->currentData, startTime, endTime, state->gridNx, state->gridNy, state->gridNz, state->gridData, state->exchangeCounters
+                                          (state->particlesBlocks, state->particlesBlocksCount, state->electricData, state->magneticData, state->currentData, startTime, endTime, state->gridNx, state->gridNy, state->gridNz, state->gridData, state->exchangeCounters, state->position
                                           );
         cudaStatus = cudaStreamSynchronize(state->modellingStream);
         if (cudaStatus != cudaSuccess) {
             std::cerr << "Kernel failed: makeStep " << cudaStatus << "\n";
             return false;
         }
+
+        //printf("%e %e %e %e\n",state->position[0],state->position[1],state->position[2],state->position[3]);
 
         //cudaEventRecord(stop);
         //cudaEventSynchronize(stop);
@@ -913,10 +1035,10 @@ bool gpuMakeStep(GpuState* state, float startTime, float endTime) {
     threads.x = 1024;
     threads.y = 1;
     threads.z = 1;
-    collectCurrentData<< < blocks, threads, 0, state->modellingStream >>>(state->currentData, 12*state->gridDim,state->workingBlocksCount);
+    /*collectCurrentData<< < blocks, threads, 0, state->modellingStream >>>(state->currentData, 12*state->gridDim,state->workingBlocksCount);
     cudaStatus = cudaStreamSynchronize(state->modellingStream);
     if (cudaStatus != cudaSuccess) {
-        std::cerr << "Kernel failed: makeStep " << cudaStatus << "\n";
+        std::cerr << "Kernel failed: collectCurrentData " << cudaStatus << "\n";
         return false;
     }
 
@@ -925,7 +1047,7 @@ bool gpuMakeStep(GpuState* state, float startTime, float endTime) {
     if (cudaStatus != cudaSuccess) {
         std::cerr << "cudaMemcpyAsync failed: currentData " << cudaStatus << "\n";
         return false;
-    }
+    }*/
 
 
     return true;

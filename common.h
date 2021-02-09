@@ -28,6 +28,9 @@ typedef float FieldComponent;
 
 #define sqr(x) ((x)*(x))
 
+#define A 50000.0f
+#define H0 0.5f
+
 
 #define x_idx(cellIdx,gridNx,gridNy,gridNz) ((cellIdx)/((gridNz)*(gridNy)))
 #define y_idx(cellIdx,gridNx,gridNy,gridNz) (((cellIdx)/(gridNz))%(gridNy))
